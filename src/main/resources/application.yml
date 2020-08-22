@@ -1,0 +1,12 @@
+spring:
+  cloud:
+    config:
+      uri: http://localhost:8888
+      enabled: true
+      profile: dev
+      label: groovy
+  application:
+    name: scripts-app
+logging:
+  level:
+    org.springframework.cloud.config.client: debug
