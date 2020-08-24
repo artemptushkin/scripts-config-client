@@ -10,3 +10,4 @@ spring:
 logging:
   level:
     org.springframework.cloud.config.client: debug
+    io.github.artemptushkin.spring.cloud.config: debug

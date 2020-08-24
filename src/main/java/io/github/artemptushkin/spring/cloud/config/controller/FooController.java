@@ -13,20 +13,12 @@ public class FooController {
 	@Value("${foo.baz}")
 	private String value;
 
-	@Value("${foo.custom}")
-	private String customValue;
-
 	@Autowired
 	private FooInterface fooInterface;
 
 	@GetMapping("/get-value")
 	public String getValue() {
 		return value;
-	}
-
-	@GetMapping("/get-value-from-custom")
-	public String getCustomValue() {
-		return customValue;
 	}
 
 	@GetMapping("/say-hi-from-script")

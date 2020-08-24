@@ -1,0 +1,2 @@
+org.springframework.cloud.bootstrap.BootstrapConfiguration=io.github.artemptushkin.spring.cloud.config.locator.ScriptFilesLocator, io.github.artemptushkin.spring.cloud.config.conversion.BeanDefinitionHttpMessageConverter,\
+  io.github.artemptushkin.spring.cloud.config.source.KotlinScriptContextInitializer, io.github.artemptushkin.spring.cloud.config.config.ScriptPropertySourceBootstrapConfiguration
