@@ -8,14 +8,16 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
-import io.github.artemptushkin.spring.cloud.config.config.ExternalScriptsProperties;
+import io.github.artemptushkin.spring.cloud.config.config.ConfigScriptsProperties;
 import io.github.artemptushkin.spring.cloud.config.conversion.BeanDefinitionHttpMessageConverter;
 import io.github.artemptushkin.spring.cloud.config.source.KotlinScriptPropertySource;
 import io.github.artemptushkin.spring.cloud.config.source.ScriptPropertySource;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import org.springframework.beans.BeanUtils;
 import org.springframework.boot.origin.Origin;
 import org.springframework.cloud.config.client.ConfigClientProperties;
 import org.springframework.cloud.config.client.ConfigClientStateHolder;
@@ -34,27 +36,29 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.retry.annotation.Retryable;
 import org.springframework.util.Assert;
 import org.springframework.util.Base64Utils;
+import org.springframework.util.ObjectUtils;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
+import static java.text.MessageFormat.format;
 import static org.springframework.cloud.config.client.ConfigClientProperties.AUTHORIZATION;
 import static org.springframework.cloud.config.client.ConfigClientProperties.STATE_HEADER;
 import static org.springframework.cloud.config.client.ConfigClientProperties.TOKEN_HEADER;
 
-public class ScriptFilesLocator implements ScriptPropertySourceLocator {
+public class DefaultScriptPropertySourceLocator implements ScriptPropertySourceLocator {
 
-	private static final Log LOGGER = LogFactory.getLog(ScriptFilesLocator.class);
+	private static final Log LOGGER = LogFactory.getLog(DefaultScriptPropertySourceLocator.class);
 
+	private final ConfigClientProperties configClientProperties;
+	private final ConfigScriptsProperties configScriptsProperties;
 	private RestTemplate restTemplate;
-	private ConfigClientProperties configClientProperties;
-	private ExternalScriptsProperties externalScriptsProperties;
 
-	public ScriptFilesLocator(ConfigClientProperties configClientProperties, ExternalScriptsProperties externalScriptsProperties) {
+	public DefaultScriptPropertySourceLocator(ConfigClientProperties configClientProperties, ConfigScriptsProperties configScriptsProperties) {
 		this.configClientProperties = configClientProperties;
-		this.externalScriptsProperties = externalScriptsProperties;
+		this.configScriptsProperties = configScriptsProperties;
 	}
 
 	@Override
@@ -62,25 +66,27 @@ public class ScriptFilesLocator implements ScriptPropertySourceLocator {
 	public Collection<ScriptPropertySource<?>> locate(
 			org.springframework.core.env.Environment environment) {
 		ConfigClientProperties properties = this.configClientProperties.override(environment);
+		ConfigScriptsProperties scriptsProperties = new ConfigScriptsProperties();
+		BeanUtils.copyProperties(this.configScriptsProperties, scriptsProperties);
+
 		List<ScriptPropertySource<?>> scriptPropertySources = new ArrayList<>();
 		RestTemplate restTemplate = this.restTemplate == null
 				? getSecureRestTemplate(properties) : this.restTemplate;
 		Exception error = null;
 		String errorBody = null;
 		try {
-			String[] labels = new String[] { "" };
+			String[] labels = new String[] {""};
 			if (StringUtils.hasText(properties.getLabel())) {
 				labels = StringUtils
 						.commaDelimitedListToStringArray(properties.getLabel());
 			}
 			String state = ConfigClientStateHolder.getState();
-			// Try all the labels until one works
+
 			for (String label : labels) {
-				KotlinScriptPropertySource result = getRemoteEnvironment(restTemplate, properties, label.trim(), state);
-				if (result != null) {
-					log(result);
-					scriptPropertySources.add(result);
-				}
+				List<ScriptPropertySource<?>> result = getRemoteEnvironment(restTemplate, properties,
+						configScriptsProperties, label.trim(), state);
+				log(result);
+				scriptPropertySources.addAll(result);
 			}
 			errorBody = String.format("None of labels %s found", Arrays.toString(labels));
 		}
@@ -107,84 +113,102 @@ public class ScriptFilesLocator implements ScriptPropertySourceLocator {
 
 	}
 
-	private void log(KotlinScriptPropertySource result) {
+	private void log(List<ScriptPropertySource<?>> result) {
 		if (LOGGER.isInfoEnabled()) {
-			LOGGER.info(String.format(
-					"Located kotlin script file: name=%s, profiles=%s, label=%s",
-					result.getName(),
-					result.getProfile() == null ? "" : Collections.singletonList(result.getProfile()),
-					result.getLabel()));
+			String mask = "name=%s, profiles=%s, label=%s";
+			String files = result
+					.stream()
+					.map(property -> String.format(mask, property.getName(),
+							property.getProfile() == null ? "" : Collections.singletonList(property.getProfile()),
+							property.getLabel())).collect(Collectors.joining());
+			LOGGER.info(String.format("Located script files: %s", files));
 		}
 	}
 
-	private KotlinScriptPropertySource getRemoteEnvironment(RestTemplate restTemplate,
-			ConfigClientProperties properties, String label, String state) {
-		String path = "/{name}/{profile}";
-		String name = properties.getName();
-		String profile = properties.getProfile();
-		String token = properties.getToken();
-		int noOfUrls = properties.getUri().length;
-		if (noOfUrls > 1) {
-			LOGGER.info("Multiple Config Server Urls found listed.");
+	private List<ScriptPropertySource<?>> getRemoteEnvironment(RestTemplate restTemplate, ConfigClientProperties properties, ConfigScriptsProperties scriptsProperties, String label, String state) {
+		List<ScriptPropertySource<?>> kotlinScriptPropertySources = new ArrayList<>();
+
+		processScripts(restTemplate, properties, scriptsProperties.getGroovy(), kotlinScriptPropertySources, label, state);
+		processScripts(restTemplate, properties, scriptsProperties.getKotlin(), kotlinScriptPropertySources, label, state);
+		return kotlinScriptPropertySources;
+	}
+
+	private <T> void processScripts(RestTemplate restTemplate, ConfigClientProperties properties, ConfigScriptsProperties.ScriptLanguageProperties<T> languageProperties,
+			List<ScriptPropertySource<?>> propertySources, String label, String state) {
+
+		if (languageProperties.isEnabled() && !ObjectUtils.isEmpty(languageProperties.getScriptFiles())) {
+			String token = properties.getToken();
+			int noOfUrls = properties.getUri().length;
+			if (noOfUrls > 1) {
+				LOGGER.info("Multiple Config Server Urls found listed.");
+			}
+
+			LOGGER.debug(format("Script properties for file extension {0} is enabled and file names exist, loading", languageProperties
+					.getFileExtension()));
+
+			for (String fileName : languageProperties.getScriptFiles()) {
+				for (int i = 0; i < noOfUrls; i++) {
+					ConfigClientProperties.Credentials credentials = properties.getCredentials(i);
+					String path = "/{name}/{profile}";
+					String uri = credentials.getUri();
+					String name = properties.getName();
+					String profile = properties.getProfile();
+					Object[] args = new String[] {name, profile};
+					String username = credentials.getUsername();
+					String password = credentials.getPassword();
+					if (StringUtils.hasText(label)) {
+						// workaround for Spring MVC matching / in paths
+						label = org.springframework.cloud.config.environment.Environment.denormalize(label);
+						args = new String[] {name, profile, label};
+						path = path + "/{label}";
+					}
+
+					LOGGER.info("Fetching config from server at : " + uri);
+
+					HttpHeaders headers = new HttpHeaders();
+					headers.setAccept(
+							Collections.singletonList(MediaType.TEXT_PLAIN));
+					addAuthorizationToken(properties, headers, username, password);
+					if (StringUtils.hasText(token)) {
+						headers.add(TOKEN_HEADER, token);
+					}
+					if (StringUtils.hasText(state) && properties.isSendState()) {
+						headers.add(STATE_HEADER, state);
+					}
+					try {
+						final HttpEntity<Void> entity = new HttpEntity<>(null, headers);
+						ResponseEntity<T> response = restTemplate
+								.exchange(uri + path + "/" + fileName, HttpMethod.GET, entity,
+										languageProperties.getScriptClass(), args);
+						if (response.getStatusCode() != HttpStatus.OK) {
+							continue;
+						}
+						T responseBody = response.getBody();
+						if (responseBody instanceof BeanDefinitionDsl) {
+							BeanDefinitionDsl beanDefinitionDsl = (BeanDefinitionDsl) responseBody;
+							ScriptPropertySource<BeanDefinitionDsl> propertySource = new KotlinScriptPropertySource(
+									fileName, profile, label, beanDefinitionDsl
+							);
+							propertySources.add(propertySource);
+						} else {
+
+						}
+					}
+					catch (HttpClientErrorException e) {
+						if (e.getStatusCode() != HttpStatus.NOT_FOUND) {
+							throw e;
+						}
+					}
+					catch (ResourceAccessException e) {
+						LOGGER.info("Connect Timeout Exception on Url - " + uri
+								+ ". Will be trying the next url if available");
+						if (i == noOfUrls - 1) {
+							throw e;
+						}
+					}
+				}
+			}
 		}
-
-		Object[] args = new String[] { name, profile };
-		if (StringUtils.hasText(label)) {
-			// workaround for Spring MVC matching / in paths
-			label = org.springframework.cloud.config.environment.Environment.denormalize(label);
-			args = new String[] { name, profile, label };
-			path = path + "/{label}";
-		}
-		ResponseEntity<BeanDefinitionDsl> response = null;
-
-		for (int i = 0; i < noOfUrls; i++) {
-			ConfigClientProperties.Credentials credentials = properties.getCredentials(i);
-			String uri = credentials.getUri();
-			String username = credentials.getUsername();
-			String password = credentials.getPassword();
-
-			LOGGER.info("Fetching config from server at : " + uri);
-
-			try {
-				HttpHeaders headers = new HttpHeaders();
-				headers.setAccept(
-						Collections.singletonList(MediaType.TEXT_PLAIN));
-				addAuthorizationToken(properties, headers, username, password);
-				if (StringUtils.hasText(token)) {
-					headers.add(TOKEN_HEADER, token);
-				}
-				if (StringUtils.hasText(state) && properties.isSendState()) {
-					headers.add(STATE_HEADER, state);
-				}
-
-				final HttpEntity<Void> entity = new HttpEntity<>((Void) null, headers);
-				response = restTemplate.exchange(uri + path + "/script-beans.kts", HttpMethod.GET, entity,
-						BeanDefinitionDsl.class, args);
-			}
-			catch (HttpClientErrorException e) {
-				if (e.getStatusCode() != HttpStatus.NOT_FOUND) {
-					throw e;
-				}
-			}
-			catch (ResourceAccessException e) {
-				LOGGER.info("Connect Timeout Exception on Url - " + uri
-						+ ". Will be trying the next url if available");
-				if (i == noOfUrls - 1) {
-					throw e;
-				}
-				else {
-					continue;
-				}
-			}
-
-			if (response == null || response.getStatusCode() != HttpStatus.OK) {
-				return null;
-			}
-
-			return new KotlinScriptPropertySource(response.getBody(), "script-beans", profile, label);
-		}
-
-		return null;
 	}
 
 	public void setRestTemplate(RestTemplate restTemplate) {

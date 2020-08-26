@@ -22,7 +22,7 @@ import org.springframework.core.env.ConfigurableEnvironment;
 import static java.text.MessageFormat.format;
 
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties(ExternalScriptsProperties.class)
+@EnableConfigurationProperties(ConfigScriptsProperties.class)
 public class ScriptPropertySourceBootstrapConfiguration implements
 		ApplicationContextInitializer<GenericApplicationContext>, Ordered {
 

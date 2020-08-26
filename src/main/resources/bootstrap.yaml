@@ -1,0 +1,15 @@
+spring:
+  cloud:
+    config:
+      uri: http://localhost:8888
+      enabled: true
+      profile: dev
+      label: groovy
+      scripts:
+        groovy:
+          enabled: false
+        kotlin:
+          enabled: true
+          scriptFiles: script-beans.kts
+  application:
+    name: scripts-app

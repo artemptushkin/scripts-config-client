@@ -13,8 +13,8 @@ public class KotlinScriptPropertySource extends ScriptPropertySource<BeanDefinit
 	private final String profile;
 	private final String label;
 
-	public KotlinScriptPropertySource(BeanDefinitionDsl source, String name, String profile, String label) {
-		super(name, source);
+	public KotlinScriptPropertySource(String name, String profile, String label, BeanDefinitionDsl source) {
+		super(name, profile, label, source);
 		this.profile = profile;
 		this.label = label;
 	}
