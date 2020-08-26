@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
+import org.jetbrains.annotations.NotNull;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.support.BeanDefinitionDsl;
@@ -23,15 +24,11 @@ public class ConfigScriptsProperties {
 	@NoArgsConstructor
 	@AllArgsConstructor
 	@EqualsAndHashCode(onlyExplicitlyIncluded = true, callSuper = true)
-	public static class GroovyScriptLanguageProperties extends ScriptLanguageProperties<Object> {
+	public static class GroovyScriptLanguageProperties extends ScriptLanguageProperties<String> {
 		private boolean enabled = true;
 		private String[] scriptFiles;
 		private String fileExtension = ".groovy";
-		private Class<?> scriptClass;
-
-		public Class<Object> getScriptClass() {
-			throw new UnsupportedOperationException("Currently groovy is not supported"); //todo
-		}
+		private Class<String> scriptClass = String.class;
 	}
 
 	@Data
@@ -52,7 +49,9 @@ public class ConfigScriptsProperties {
 		private boolean enabled = true;
 		private String[] scriptFiles;
 
+		@NotNull
 		public abstract String getFileExtension();
+		@NotNull
 		public abstract Class<T> getScriptClass();
 	}
 }

@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 
 import io.github.artemptushkin.spring.cloud.config.config.ConfigScriptsProperties;
 import io.github.artemptushkin.spring.cloud.config.conversion.BeanDefinitionHttpMessageConverter;
+import io.github.artemptushkin.spring.cloud.config.source.GroovyScriptPropertySource;
 import io.github.artemptushkin.spring.cloud.config.source.KotlinScriptPropertySource;
 import io.github.artemptushkin.spring.cloud.config.source.ScriptPropertySource;
 import org.apache.commons.logging.Log;
@@ -126,11 +127,11 @@ public class DefaultScriptPropertySourceLocator implements ScriptPropertySourceL
 	}
 
 	private List<ScriptPropertySource<?>> getRemoteEnvironment(RestTemplate restTemplate, ConfigClientProperties properties, ConfigScriptsProperties scriptsProperties, String label, String state) {
-		List<ScriptPropertySource<?>> kotlinScriptPropertySources = new ArrayList<>();
+		List<ScriptPropertySource<?>> scriptPropertySources = new ArrayList<>();
 
-		processScripts(restTemplate, properties, scriptsProperties.getGroovy(), kotlinScriptPropertySources, label, state);
-		processScripts(restTemplate, properties, scriptsProperties.getKotlin(), kotlinScriptPropertySources, label, state);
-		return kotlinScriptPropertySources;
+		processScripts(restTemplate, properties, scriptsProperties.getGroovy(), scriptPropertySources, label, state);
+		processScripts(restTemplate, properties, scriptsProperties.getKotlin(), scriptPropertySources, label, state);
+		return scriptPropertySources;
 	}
 
 	private <T> void processScripts(RestTemplate restTemplate, ConfigClientProperties properties, ConfigScriptsProperties.ScriptLanguageProperties<T> languageProperties,
@@ -191,7 +192,11 @@ public class DefaultScriptPropertySourceLocator implements ScriptPropertySourceL
 							);
 							propertySources.add(propertySource);
 						} else {
-
+							String groovyBeanDefinition = (String) responseBody;
+							ScriptPropertySource<String> propertySource = new GroovyScriptPropertySource(
+									fileName, profile, label, groovyBeanDefinition
+							);
+							propertySources.add(propertySource);
 						}
 					}
 					catch (HttpClientErrorException e) {

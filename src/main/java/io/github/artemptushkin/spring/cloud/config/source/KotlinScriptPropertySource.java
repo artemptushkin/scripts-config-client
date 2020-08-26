@@ -10,13 +10,8 @@ import org.springframework.context.support.GenericApplicationContext;
 @Getter
 public class KotlinScriptPropertySource extends ScriptPropertySource<BeanDefinitionDsl> {
 
-	private final String profile;
-	private final String label;
-
 	public KotlinScriptPropertySource(String name, String profile, String label, BeanDefinitionDsl source) {
 		super(name, profile, label, source);
-		this.profile = profile;
-		this.label = label;
 	}
 
 	@Override
